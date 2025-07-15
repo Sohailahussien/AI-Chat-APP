@@ -1,0 +1,23 @@
+version: '3.8'
+services:
+  chroma:
+    image: chromadb/chroma:latest
+    environment:
+      - ALLOW_RESET=true
+      - CHROMA_SERVER_AUTH_CREDENTIALS=
+      - CHROMA_SERVER_AUTH_CREDENTIALS_PROVIDER=
+      - CHROMA_SERVER_AUTH_PROVIDER=
+    volumes:
+      - chroma_data:/chroma/chroma
+    ports:
+      - "8000:8000"
+    networks:
+      - chroma_net
+
+volumes:
+  chroma_data:
+    driver: local
+
+networks:
+  chroma_net:
+    driver: bridge 
