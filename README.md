@@ -1,6 +1,6 @@
 # AI Chat App
 
-A real-time chat application built with Next.js and OpenAI.
+A real-time chat application built with Next.js and ChromaDB.
 
 ## Getting Started
 
@@ -8,11 +8,12 @@ A real-time chat application built with Next.js and OpenAI.
 2. Install dependencies:
 ```bash
 npm install
+pip install chromadb
 ```
 
 3. Set up environment variables:
    - Copy `.env.example` to `.env.local`
-   - Add your OpenAI API key to `.env.local`
+   - Add your Anthropic API key to `.env.local`
 
 ```bash
 # Windows
@@ -22,9 +23,9 @@ copy .env.example .env.local
 cp .env.example .env.local
 ```
 
-4. Update `.env.local` with your OpenAI API key:
+4. Update `.env.local` with your Anthropic API key:
 ```
-OPENAI_API_KEY=your_actual_api_key_here
+ANTHROPIC_API_KEY=your_actual_api_key_here
 ```
 
 5. Run the development server:
@@ -38,7 +39,10 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 The following environment variables are required:
 
-- `OPENAI_API_KEY`: Your OpenAI API key (get it from [OpenAI Dashboard](https://platform.openai.com/api-keys))
+- `ANTHROPIC_API_KEY`: Your Anthropic API key
+- `ANTHROPIC_MODEL`: The Anthropic model to use (defaults to claude-3-opus-20240229)
+- `CHROMA_COLLECTION_NAME`: Name of the ChromaDB collection (defaults to 'documents')
+- `CHROMA_EMBEDDING_MODEL`: Model to use for embeddings (defaults to Xenova/all-MiniLM-L6-v2)
 
 ## Security Note
 

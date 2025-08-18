@@ -1,29 +1,32 @@
-import { Document } from '@langchain/core/documents';
-import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
+// Simple Document interface to replace LangChain import
+interface Document {
+  pageContent: string;
+  metadata: Record<string, any>;
+}
 
 export class DocumentProcessor {
-  private textSplitter: RecursiveCharacterTextSplitter;
-
-  constructor() {
-    this.textSplitter = new RecursiveCharacterTextSplitter({
-      chunkSize: 1000,
-      chunkOverlap: 200,
-    });
-  }
-
   async processText(text: string, metadata: Record<string, any> = {}): Promise<Document[]> {
-    const doc = new Document({ pageContent: text, metadata });
-    return this.textSplitter.splitDocuments([doc]);
+    // Simple text splitting by paragraphs
+    const paragraphs = text.split(/\n\s*\n/).filter(p => p.trim().length > 0);
+    
+    return paragraphs.map(paragraph => ({
+      pageContent: paragraph.trim(),
+      metadata: { ...metadata, type: 'paragraph' }
+    }));
   }
 
   async processURL(url: string): Promise<Document[]> {
     try {
       const response = await fetch(url);
       const text = await response.text();
-      return this.processText(text, { source: url });
+      
+      // Simple HTML to text conversion
+      const cleanText = text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+      
+      return this.processText(cleanText, { source: url, type: 'url' });
     } catch (error) {
       console.error('Error processing URL:', error);
-      throw error;
+      return [];
     }
   }
 } 

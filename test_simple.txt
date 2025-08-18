@@ -1,0 +1,9 @@
+This is a test document for the AI chat application.
+
+The document contains information about:
+- Multi-agent orchestration systems
+- RAG (Retrieval-Augmented Generation) pipelines
+- Vector databases and embeddings
+- Document processing and analysis
+
+This should be easily searchable and retrievable by the AI system. 

@@ -3,7 +3,12 @@ import { DocumentProcessor } from '../utils/documentProcessors';
 import { ContextEnhancer } from './contextEnhancer';
 import { ToolManager } from './toolManager';
 import { ConversationManager } from './conversationManager';
-import { Document } from '@langchain/core/documents';
+
+// Simple Document interface to replace LangChain import
+interface Document {
+  pageContent: string;
+  metadata: Record<string, any>;
+}
 
 interface RelevantDocs {
   documents: string[][];
@@ -139,7 +144,7 @@ export class RAGService {
 
       const documents = (relevantDocs.documents?.[0] || [])
         .filter((doc: string | null): doc is string => doc !== null)
-        .map((doc: string, index: number) => new Document({
+        .map((doc: string, index: number) => ({
           pageContent: doc,
           metadata: relevantDocs.metadatas?.[0]?.[index] || {}
         }));

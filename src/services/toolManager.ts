@@ -27,20 +27,6 @@ const ToolSchema = z.object({
 type Tool = z.infer<typeof ToolSchema>;
 type Parameter = z.infer<typeof ParameterSchema>;
 
-interface Tool {
-  name: string;
-  description: string;
-  category: string;
-  parameters: {
-    name: string;
-    type: string;
-    description: string;
-    required: boolean;
-    default?: any;
-  }[];
-  handler: (params: Record<string, any>) => Promise<any>;
-}
-
 export class ToolManager {
   private tools: Map<string, Tool> = new Map();
 

@@ -1,4 +1,8 @@
-import { Document } from '@langchain/core/documents';
+// Simple Document interface to replace LangChain import
+interface Document {
+  pageContent: string;
+  metadata: Record<string, any>;
+}
 
 export class ContextEnhancer {
   async enhanceContext(

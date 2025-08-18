@@ -1,0 +1,20 @@
+[
+  {
+    "source": "C:\\Users\\HP\\OneDrive\\Work space\\ai-chat-app\\uploads\\1754346330192-dragons.docx",
+    "content_type": "docx",
+    "uploaded_at": "2025-01-01T00:00:00.000000",
+    "word_count": 265
+  },
+  {
+    "source": "test.txt",
+    "content_type": "text",
+    "uploaded_at": "2025-01-01T00:00:00.000000",
+    "word_count": 87
+  },
+  {
+    "source": "test.txt",
+    "content_type": "text",
+    "uploaded_at": "2025-01-01T00:00:00.000000",
+    "word_count": 87
+  }
+]

@@ -1,0 +1,11 @@
+This is a test document for file upload functionality.
+
+The RAG service should now be able to process this file and make it searchable.
+
+This document contains information about:
+- File upload testing
+- RAG service functionality
+- Document processing
+- Search capabilities
+
+You can now ask questions about this document and the AI should be able to find relevant information.

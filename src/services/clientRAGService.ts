@@ -1,40 +1,65 @@
-import { Document } from '@langchain/core/documents';
-
 export class ClientRAGService {
   private baseUrl: string;
 
   constructor() {
     this.baseUrl = typeof window !== 'undefined' 
       ? window.location.origin 
-      : `http://localhost:${process.env.PORT || 3005}`; // Updated port to 3005
+      : `http://localhost:${process.env.PORT || 3000}`;
   }
 
   async processQuery(
     query: string,
     conversationId?: string,
     context?: Record<string, any>
-  ): Promise<any> {
+  ): Promise<{ stream: ReadableStream | null; conversationId: string }> {
     try {
       console.log('Processing query:', query);
       
-      const response = await fetch(`${this.baseUrl}/api/chat`, {
+      // First get relevant documents from ChromaDB
+      const chromaResponse = await fetch(`${this.baseUrl}/api/chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ message: query })
+      });
+
+      if (!chromaResponse.ok) {
+        throw new Error('Failed to get relevant documents');
+      }
+
+      const chromaData = await chromaResponse.json();
+      
+      // Then get AI response with context from ChromaDB
+      const aiResponse = await fetch(`${this.baseUrl}/api/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           messages: [{ role: 'user', content: query }],
-          context: context || {}
+          context: {
+            ...context,
+            relevantDocuments: chromaData.data?.documents || []
+          }
         })
       });
 
-      if (!response.ok) {
-        const error = await response.json();
+      if (!aiResponse.ok) {
+        const error = await aiResponse.json().catch(() => ({ error: 'Unknown error occurred' }));
         throw new Error(error.error || 'Failed to get response from API');
       }
 
+      if (!aiResponse.body) {
+        throw new Error('No response stream received');
+      }
+
+      // Create a TransformStream to decode the text chunks
+      const textDecoder = new TextDecoderStream();
+      const decodedStream = aiResponse.body.pipeThrough(textDecoder);
+
       return {
-        stream: response.body,
+        stream: decodedStream,
         conversationId: conversationId || `conv_${Date.now()}`
       };
     } catch (error) {
@@ -43,14 +68,14 @@ export class ClientRAGService {
     }
   }
 
-  async addDocuments(documents: Document[]) {
+  async addDocuments(documents: string[], metadatas?: Record<string, any>[]) {
     try {
-      const response = await fetch(`${this.baseUrl}/api/documents`, {
+      const response = await fetch(`${this.baseUrl}/api/documents/add`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ documents })
+        body: JSON.stringify({ documents, metadatas })
       });
 
       if (!response.ok) {

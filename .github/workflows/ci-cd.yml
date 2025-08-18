@@ -1,0 +1,319 @@
+name: CI/CD Pipeline - Cubi AI Platform
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: '18'
+  PYTHON_VERSION: '3.11'
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+jobs:
+  # Security Scanning
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run security scan
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript, python
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+
+      - name: Run npm audit
+        run: npm audit --audit-level moderate
+
+      - name: Run safety check (Python)
+        run: |
+          pip install safety
+          safety check
+
+  # Testing
+  test:
+    runs-on: ubuntu-latest
+    needs: security-scan
+    strategy:
+      matrix:
+        node-version: [16, 18, 20]
+        python-version: [3.9, 3.10, 3.11]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install Node.js dependencies
+        run: npm ci
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run TypeScript type checking
+        run: npx tsc --noEmit
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Run Jest tests
+        run: npm test -- --coverage --watchAll=false
+
+      - name: Run Python tests
+        run: |
+          python -m pytest tests/ --cov=src --cov-report=xml
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage/lcov.info
+          flags: unittests
+          name: codecov-umbrella
+
+  # Build and Quality Checks
+  build:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          pip install -r requirements.txt
+
+      - name: Build application
+        run: npm run build
+
+      - name: Check bundle size
+        run: npm run analyze
+
+      - name: Run performance tests
+        run: npm run lighthouse
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: build-artifacts
+          path: |
+            .next/
+            dist/
+            build/
+
+  # Integration Tests
+  integration-tests:
+    runs-on: ubuntu-latest
+    needs: build
+    services:
+      postgres:
+        image: postgres:13
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          pip install -r requirements.txt
+
+      - name: Run integration tests
+        run: |
+          npm run test:integration
+          python -m pytest tests/integration/
+
+      - name: Run E2E tests
+        run: npm run test:e2e
+
+  # Deploy to Staging
+  deploy-staging:
+    runs-on: ubuntu-latest
+    needs: integration-tests
+    if: github.ref == 'refs/heads/develop'
+    environment: staging
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Deploy to Vercel (Staging)
+        run: |
+          vercel --token ${{ secrets.VERCEL_TOKEN }} --prod
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ env.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ env.VERCEL_PROJECT_ID }}
+
+      - name: Run smoke tests
+        run: |
+          npm run test:smoke -- --base-url ${{ steps.deploy.outputs.url }}
+
+      - name: Notify staging deployment
+        uses: 8398a7/action-slack@v3
+        with:
+          status: success
+          text: 'Staging deployment successful!'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  # Deploy to Production
+  deploy-production:
+    runs-on: ubuntu-latest
+    needs: integration-tests
+    if: github.ref == 'refs/heads/main'
+    environment: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Deploy to Vercel (Production)
+        id: deploy
+        run: |
+          vercel --token ${{ secrets.VERCEL_TOKEN }} --prod
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ env.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ env.VERCEL_PROJECT_ID }}
+
+      - name: Run production smoke tests
+        run: |
+          npm run test:smoke -- --base-url ${{ steps.deploy.outputs.url }}
+
+      - name: Setup monitoring
+        run: |
+          npm run monitoring:setup -- --url ${{ steps.deploy.outputs.url }}
+
+      - name: Notify production deployment
+        uses: 8398a7/action-slack@v3
+        with:
+          status: success
+          text: 'Production deployment successful!'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  # Monitoring and Analytics
+  monitoring:
+    runs-on: ubuntu-latest
+    needs: deploy-production
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup monitoring dashboards
+        run: |
+          npm run monitoring:setup-dashboards
+
+      - name: Configure alerts
+        run: |
+          npm run monitoring:configure-alerts
+
+      - name: Run performance tests
+        run: |
+          npm run lighthouse -- --url ${{ needs.deploy-production.outputs.url }}
+
+      - name: Generate analytics report
+        run: |
+          npm run analytics:generate-report
+
+      - name: Upload monitoring artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: monitoring-artifacts
+          path: |
+            reports/
+            analytics/
+            monitoring/
+
+  # Post-Deployment Verification
+  post-deployment:
+    runs-on: ubuntu-latest
+    needs: [deploy-production, monitoring]
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Health check
+        run: |
+          curl -f ${{ needs.deploy-production.outputs.url }}/api/health
+
+      - name: Performance check
+        run: |
+          npm run performance:check -- --url ${{ needs.deploy-production.outputs.url }}
+
+      - name: Security check
+        run: |
+          npm run security:check -- --url ${{ needs.deploy-production.outputs.url }}
+
+      - name: Generate deployment report
+        run: |
+          npm run report:generate -- --deployment-url ${{ needs.deploy-production.outputs.url }}
+
+      - name: Upload deployment report
+        uses: actions/upload-artifact@v3
+        with:
+          name: deployment-report
+          path: deployment-report.md 

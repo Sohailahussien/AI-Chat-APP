@@ -1,0 +1,79 @@
+{
+  "version": 2,
+  "name": "cubi-ai-platform",
+  "builds": [
+    {
+      "src": "src/app/api/**/*.ts",
+      "use": "@vercel/node",
+      "config": {
+        "maxLambdaSize": "50mb"
+      }
+    },
+    {
+      "src": "src/app/**/*.tsx",
+      "use": "@vercel/next",
+      "config": {
+        "distDir": ".next"
+      }
+    },
+    {
+      "src": "src/mcp/**/*.ts",
+      "use": "@vercel/node",
+      "config": {
+        "maxLambdaSize": "50mb"
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/mcp/(.*)",
+      "dest": "/src/app/api/mcp/route.ts",
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization"
+      }
+    },
+    {
+      "src": "/api/chat",
+      "dest": "/src/app/api/chat/route.ts",
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization"
+      }
+    },
+    {
+      "src": "/api/(.*)",
+      "dest": "/src/app/api/$1/route.ts"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/src/app/$1"
+    }
+  ],
+  "functions": {
+    "src/app/api/mcp/route.ts": {
+      "maxDuration": 30,
+      "memory": 3008
+    },
+    "src/app/api/chat/route.ts": {
+      "maxDuration": 30,
+      "memory": 3008
+    },
+    "src/app/api/mcp/tools/route.ts": {
+      "maxDuration": 30,
+      "memory": 3008
+    }
+  },
+  "env": {
+    "NODE_ENV": "production",
+    "CHROMA_DB_PATH": "./chroma_db",
+    "MCP_SERVER_URL": "https://your-mcp-server.vercel.app",
+    "FLUID_COMPUTE_ENABLED": "true"
+  },
+  "regions": ["iad1", "sfo1"],
+  "features": {
+    "fluid-compute": true
+  }
+} 

@@ -1,5 +1,8 @@
-import { Document } from '@langchain/core/documents';
-import { ChromaService } from './chromaService';
+// Simple Document interface to replace LangChain import
+interface Document {
+  pageContent: string;
+  metadata: Record<string, any>;
+}
 
 export interface QueryResult {
   documents: string[][];
@@ -8,40 +11,34 @@ export interface QueryResult {
 }
 
 export class VectorStore {
-  private store: ChromaService;
+  private documents: Document[] = [];
 
   constructor() {
-    // Get the singleton instance
-    this.store = ChromaService.getInstance();
+    // Initialize empty store
   }
 
   async initialize(): Promise<void> {
-    // Initialize is a no-op since ChromaService handles initialization internally
-    return Promise.resolve();
+    // No initialization needed for in-memory store
   }
 
   async addDocuments(documents: Document[]): Promise<void> {
-    // Convert Documents to File objects for ChromaService
-    const files = documents.map(doc => {
-      const blob = new Blob([doc.pageContent], { type: 'text/plain' });
-      return new File([blob], `doc_${Date.now()}.txt`, { type: 'text/plain' });
-    });
-    
-    await this.store.addDocuments(files);
+    this.documents.push(...documents);
   }
 
   async queryDocuments(query: string, limit: number = 5): Promise<QueryResult> {
-    const results = await this.store.similaritySearch(query, limit);
+    // Simple text-based search for now
+    const matchingDocs = this.documents
+      .filter(doc => doc.pageContent.toLowerCase().includes(query.toLowerCase()))
+      .slice(0, limit);
     
     return {
-      documents: [results.map(doc => doc.pageContent)],
-      metadatas: [results.map(doc => doc.metadata)],
-      similarities: [results.map(() => 1)] // ChromaService doesn't expose similarities directly
+      documents: [matchingDocs.map(doc => doc.pageContent)],
+      metadatas: [matchingDocs.map(doc => doc.metadata)],
+      similarities: [matchingDocs.map(() => 0.8)] // Simple similarity score
     };
   }
 
   async clear(): Promise<void> {
-    // Get a fresh instance
-    this.store = ChromaService.getInstance();
+    this.documents = [];
   }
 }

@@ -1,0 +1,64 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Profile information
+  profile   Profile?
+
+  // Chat history
+  messages  Message[]
+
+  @@map("users")
+}
+
+model Profile {
+  id          String  @id @default(cuid())
+  userId      String  @unique
+  user        User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // User preferences
+  preferences Json?   // Store AI preferences, language settings, etc.
+  avatar      String?
+  bio         String?
+  
+  // AI settings
+  aiLanguage  String  @default("en")
+  aiStyle     String  @default("professional")
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("profiles")
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  content   String
+  role      String   // 'user' or 'assistant'
+  timestamp DateTime @default(now())
+  
+  // AI response metadata
+  aiAgent   String?  // 'chat', 'translation', 'analysis'
+  metadata  Json?    // Store additional AI response data
+
+  @@map("messages")
+} 
