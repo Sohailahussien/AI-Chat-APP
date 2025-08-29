@@ -64,8 +64,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   }, [user, token]);
 
   const createNewChat = () => {
+    // Generate a more robust chat ID
+    const timestamp = Date.now();
+    const random = Math.random().toString(36).substring(2, 15);
     const newChat: Chat = {
-      id: `chat_${Date.now()}`,
+      id: `chat_${timestamp}_${random}`,
       title: 'New Chat',
       messages: [],
       createdAt: new Date(),
@@ -100,7 +103,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
     // Save to API
     try {
-      await fetch('/api/chat/history', {
+      const response = await fetch('/api/chat/history', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -112,8 +115,19 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           messages
         })
       });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('Error saving chat:', errorData);
+        throw new Error(`Failed to save chat: ${errorData.error || response.statusText}`);
+      }
     } catch (error) {
       console.error('Error saving chat:', error);
+      // Revert the optimistic update on error
+      setCurrentChat(currentChat);
+      setChats(prev => prev.map(chat => 
+        chat.id === currentChat.id ? currentChat : chat
+      ));
     }
   };
 

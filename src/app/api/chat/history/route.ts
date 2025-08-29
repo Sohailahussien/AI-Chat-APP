@@ -66,45 +66,67 @@ export async function POST(request: NextRequest) {
 
     const { chatId, title, messages } = await request.json();
 
-    // Create or update chat
-    const chat = await prisma.chat.upsert({
-      where: {
-        id: chatId
-      },
-      update: {
-        title,
-        updatedAt: new Date(),
-        messages: {
-          deleteMany: {},
-          create: messages.map((msg: any, index: number) => ({
-            content: msg.content,
-            role: msg.role,
-            timestamp: msg.timestamp || new Date(),
-            order: index
-          }))
-        }
-      },
-      create: {
-        id: chatId,
-        title,
-        userId: decoded.userId,
-        messages: {
-          create: messages.map((msg: any, index: number) => ({
-            content: msg.content,
-            role: msg.role,
-            timestamp: msg.timestamp || new Date(),
-            order: index
-          }))
-        }
-      },
-      include: {
-        messages: {
-          orderBy: {
-            order: 'asc'
+    // Validate input
+    if (!chatId || !title || !Array.isArray(messages)) {
+      return NextResponse.json({ error: 'Invalid input data' }, { status: 400 });
+    }
+
+    // Check if chat exists first
+    const existingChat = await prisma.chat.findUnique({
+      where: { id: chatId }
+    });
+
+    let chat;
+    if (existingChat) {
+      // Update existing chat
+      chat = await prisma.chat.update({
+        where: { id: chatId },
+        data: {
+          title,
+          updatedAt: new Date(),
+          messages: {
+            deleteMany: {},
+            create: messages.map((msg: any, index: number) => ({
+              content: msg.content,
+              role: msg.role,
+              timestamp: msg.timestamp || new Date(),
+              order: index
+            }))
+          }
+        },
+        include: {
+          messages: {
+            orderBy: {
+              order: 'asc'
+            }
           }
         }
-      }
-    });
+      });
+    } else {
+      // Create new chat
+      chat = await prisma.chat.create({
+        data: {
+          id: chatId,
+          title,
+          userId: decoded.userId,
+          messages: {
+            create: messages.map((msg: any, index: number) => ({
+              content: msg.content,
+              role: msg.role,
+              timestamp: msg.timestamp || new Date(),
+              order: index
+            }))
+          }
+        },
+        include: {
+          messages: {
+            orderBy: {
+              order: 'asc'
+            }
+          }
+        }
+      });
+    }
 
     return NextResponse.json({
       chat: {
