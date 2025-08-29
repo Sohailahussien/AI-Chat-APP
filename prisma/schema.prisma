@@ -23,6 +23,7 @@ model User {
 
   // Chat history
   messages  Message[]
+  chats     Chat[]
 
   @@map("users")
 }
@@ -47,6 +48,21 @@ model Profile {
   @@map("profiles")
 }
 
+model Chat {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  title     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Chat messages
+  messages  ChatMessage[]
+
+  @@map("chats")
+}
+
 model Message {
   id        String   @id @default(cuid())
   userId    String
@@ -61,4 +77,20 @@ model Message {
   metadata  Json?    // Store additional AI response data
 
   @@map("messages")
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  chatId    String
+  chat      Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  
+  content   String
+  role      String   // 'user' or 'assistant'
+  timestamp DateTime @default(now())
+  order     Int      // Message order within chat
+  
+  // AI response metadata
+  metadata  Json?    // Store additional AI response data
+
+  @@map("chat_messages")
 } 

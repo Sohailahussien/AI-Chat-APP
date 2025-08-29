@@ -2,6 +2,8 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useChat } from '@/contexts/ChatContext';
+import Tooltip from './Tooltip';
 
 interface Message {
   id: string;
@@ -27,93 +29,96 @@ interface ChatInterfaceProps {
 
 export default function ChatInterface({ mcpClient }: ChatInterfaceProps) {
   const { user, token } = useAuth();
+  const { currentChat, saveChat, createNewChat } = useChat();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+  const textAreaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  // Function to clean up AI responses by removing extra whitespace and normalizing text
+  // Function to clean up AI responses - ChatGPT style (minimal processing)
   const cleanResponse = (text: string): string => {
     if (!text) return '';
     
     return text
-      // Remove all types of whitespace characters (spaces, tabs, etc.)
-      .replace(/[ \t]+/g, ' ')
-      // Remove leading and trailing whitespace
-      .trim()
-      // Remove multiple consecutive newlines and normalize to max 2 newlines
-      .replace(/\n\s*\n\s*\n+/g, '\n\n')
-      // Remove spaces at the beginning of lines
-      .replace(/^[ \t]+/gm, '')
-      // Remove spaces at the end of lines
-      .replace(/[ \t]+$/gm, '')
-      // Remove any remaining multiple spaces
-      .replace(/ +/g, ' ')
-      // Ensure proper spacing around punctuation
-      .replace(/\s+([.,!?;:])/g, '$1')
-      // Remove empty lines at the beginning and end
-      .replace(/^\n+/, '')
-      .replace(/\n+$/, '');
+      // Remove markdown formatting
+      .replace(/\*\*(.*?)\*\*/g, '$1') // Remove bold markers
+      .replace(/\*(.*?)\*/g, '$1') // Remove italic markers
+      .replace(/`(.*?)`/g, '$1') // Remove code markers
+      .replace(/\[(.*?)\]\(.*?\)/g, '$1') // Remove links, keep text
+      // Normalize whitespace (keep natural formatting)
+      .replace(/\r\n/g, '\n') // Normalize line endings
+      .replace(/\r/g, '\n') // Normalize line endings
+      .trim(); // Remove leading/trailing whitespace
   };
 
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
 
-  // Load chat history when user is authenticated
+  // Auto-resize composer textarea like ChatGPT
   useEffect(() => {
-    const loadChatHistory = async () => {
-      if (user && token) {
-        try {
-          const response = await fetch('/api/chat/messages', {
-            headers: {
-              'Authorization': `Bearer ${token}`
-            }
-          });
-          
-          if (response.ok) {
-            const data = await response.json();
-            const historyMessages = data.messages.map((msg: any) => ({
-              id: msg.id,
-              content: cleanResponse(msg.content),
-              role: msg.role,
-              timestamp: new Date(msg.timestamp),
-              responseType: msg.metadata?.responseType || 'conversational',
-              documents: msg.metadata?.documents || [],
-              metadatas: msg.metadata?.metadatas || []
-            }));
-            setMessages(historyMessages);
-          }
-        } catch (error) {
-          console.error('Error loading chat history:', error);
-        }
+    const el = textAreaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 240) + 'px';
+  }, [input]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key === 'n') {
+        event.preventDefault();
+        handleNewChat();
+      }
+      if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === 'Delete') {
+        event.preventDefault();
+        handleClearHistory();
       }
     };
 
-    loadChatHistory();
-  }, [user]);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [messages.length]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || isLoading) return;
+  // Load messages from current chat
+  useEffect(() => {
+    if (currentChat) {
+      console.log('📚 Loading messages from current chat:', currentChat.title);
+      setMessages(currentChat.messages || []);
+    } else {
+      console.log('📚 No current chat, clearing messages');
+      setMessages([]);
+    }
+  }, [currentChat]);
 
+  const sendMessage = async (textToSend: string) => {
+    if (!textToSend.trim() || isLoading) return;
     const userMessage: Message = {
       id: Date.now().toString(),
-      content: input,
+      content: textToSend,
       role: 'user',
       timestamp: new Date()
     };
-
     setMessages(prev => [...prev, userMessage]);
     setInput('');
     setIsLoading(true);
 
+    // Save user message to chat context
+    if (currentChat) {
+      console.log('💾 Saving user message to chat context');
+      const updatedMessages = [...messages, userMessage];
+      saveChat(updatedMessages);
+    }
     try {
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
@@ -128,11 +133,12 @@ export default function ChatInterface({ mcpClient }: ChatInterfaceProps) {
         method: 'POST',
         headers,
         body: JSON.stringify({ 
-          message: input
+          message: textToSend
         }),
       });
 
       const data = await response.json();
+      console.log('📥 Chat response data:', data);
 
       if (data.responseType === 'ai_response') {
         // Handle enhanced AI responses
@@ -146,6 +152,13 @@ export default function ChatInterface({ mcpClient }: ChatInterfaceProps) {
           model: data.model
         };
         setMessages(prev => [...prev, assistantMessage]);
+        
+        // Save assistant message to chat context
+        if (currentChat) {
+          console.log('💾 Saving assistant message to chat context');
+          const updatedMessages = [...messages, userMessage, assistantMessage];
+          saveChat(updatedMessages);
+        }
       } else if (data.responseType === 'conversational') {
         // Handle conversational responses
         const assistantMessage: Message = {
@@ -156,6 +169,13 @@ export default function ChatInterface({ mcpClient }: ChatInterfaceProps) {
           responseType: 'conversational'
         };
         setMessages(prev => [...prev, assistantMessage]);
+        
+        // Save assistant message to chat context
+        if (currentChat) {
+          console.log('💾 Saving conversational message to chat context');
+          const updatedMessages = [...messages, userMessage, assistantMessage];
+          saveChat(updatedMessages);
+        }
       } else if (data.responseType === 'translation') {
         // Handle translation responses
         const assistantMessage: Message = {
@@ -194,6 +214,29 @@ export default function ChatInterface({ mcpClient }: ChatInterfaceProps) {
           responseType: data.responseType || 'error'
         };
         setMessages(prev => [...prev, assistantMessage]);
+        
+        // Save assistant message to database
+        if (user && token) {
+          try {
+            await fetch('/api/chat/messages', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+              },
+              body: JSON.stringify({
+                content: cleanResponse(data.response),
+                role: 'assistant',
+                aiAgent: 'chat',
+                metadata: {
+                  responseType: data.responseType || 'error'
+                }
+              })
+            });
+          } catch (error) {
+            console.error('Error saving assistant message:', error);
+          }
+        }
       }
     } catch (error) {
       console.error('Error sending message:', error);
@@ -205,44 +248,85 @@ export default function ChatInterface({ mcpClient }: ChatInterfaceProps) {
         responseType: 'error'
       };
       setMessages(prev => [...prev, errorMessage]);
+      
+      // Save error message to database
+      if (user && token) {
+        try {
+          await fetch('/api/chat/messages', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              content: cleanResponse('Sorry, I encountered an error. Please try again.'),
+              role: 'assistant',
+              aiAgent: 'chat',
+              metadata: {
+                responseType: 'error'
+              }
+            })
+          });
+        } catch (error) {
+          console.error('Error saving error message:', error);
+        }
+      }
     } finally {
       setIsLoading(false);
     }
   };
 
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await sendMessage(input);
+  };
+
   const generateTranslationResponse = (data: any): string => {
-    let response = `🌐 **Translation Complete**\n\n`;
-    response += `${data.response}\n\n`;
-    response += `📊 **Translation Details:**\n`;
-    response += `• Service: ${data.service}\n`;
-    response += `• Confidence: ${Math.round((data.confidence || 0) * 100)}%\n`;
-    response += `• Word Count: ${data.word_count || 0}\n\n`;
-    response += `💡 **Pro Tip:** For more accurate translations, consider providing context about the document's subject matter.`;
-    
-    return response;
+    return data.response;
   };
 
   const generateDocumentResponse = (data: any): string => {
-    let response = data.response + '\n\n';
-    
-    if (data.suggestions && data.suggestions.length > 0) {
-      response += `💡 **Follow-up Questions:**\n`;
-      data.suggestions.forEach((suggestion: string, index: number) => {
-        response += `${index + 1}. ${suggestion}\n`;
-      });
-      response += '\n';
-    }
-    
-    if (data.documents && data.documents.length > 0) {
-      response += `📄 **Source:** ${data.metadatas?.[0]?.source ? getBasename(data.metadatas[0].source) : 'Document'}\n`;
-    }
-    
-    return response;
+    return data.response;
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+
+    console.log('📤 Starting file upload:', file.name, file.size, file.type);
+
+    // Add current input text to the upload if it exists
+    const currentMessage = input.trim();
+    if (currentMessage) {
+      const userMessage: Message = {
+        id: Date.now().toString(),
+        content: currentMessage,
+        role: 'user',
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, userMessage]);
+      setInput(''); // Clear the input after adding the message
+      
+      // Save user message to database
+      if (user && token) {
+        try {
+          await fetch('/api/chat/messages', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              content: currentMessage,
+              role: 'user',
+              aiAgent: 'file_upload'
+            })
+          });
+        } catch (error) {
+          console.error('Error saving user message:', error);
+        }
+      }
+    }
 
     const formData = new FormData();
     formData.append('file', file);
@@ -251,37 +335,90 @@ export default function ChatInterface({ mcpClient }: ChatInterfaceProps) {
     setIsLoading(true);
 
     try {
+      const headers: HeadersInit = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+        console.log('🔑 Using authentication token');
+      }
+      
+      console.log('📡 Sending upload request...');
       const response = await fetch('/api/upload', {
         method: 'POST',
+        headers,
         body: formData,
       });
 
-      if (response.ok) {
+      console.log('📥 Upload response status:', response.status);
         const data = await response.json();
+      console.log('📥 Upload response data:', data);
+
+      if (response.ok && data.success) {
         const successMessage: Message = {
           id: Date.now().toString(),
-          content: `✅ Successfully uploaded "${file.name}". You can now ask questions about this document.`,
+          content: currentMessage 
+            ? `Successfully uploaded "${file.name}" and processed your request. I'll analyze the document and respond to your question.`
+            : `Successfully uploaded "${file.name}". You can now ask questions about this document.`,
           role: 'assistant',
           timestamp: new Date(),
           responseType: 'upload_success'
         };
         setMessages(prev => [...prev, successMessage]);
+        console.log('✅ Upload successful, message added to chat');
+        
+        // Save upload success message to database
+        if (user && token) {
+          try {
+            await fetch('/api/chat/messages', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+              },
+              body: JSON.stringify({
+                content: currentMessage 
+                  ? `Successfully uploaded "${file.name}" and processed your request. I'll analyze the document and respond to your question.`
+                  : `Successfully uploaded "${file.name}". You can now ask questions about this document.`,
+                role: 'assistant',
+                aiAgent: 'file_upload',
+                metadata: {
+                  responseType: 'upload_success',
+                  fileName: file.name
+                }
+              })
+            });
+          } catch (error) {
+            console.error('Error saving upload success message:', error);
+          }
+        }
+        
+        // If there was a message with the file, automatically send it for processing
+        if (currentMessage) {
+          setTimeout(() => {
+            sendMessage(currentMessage);
+          }, 1000); // Small delay to ensure upload is complete
+        }
       } else {
-        throw new Error('Upload failed');
+        const errorMsg = data.error || 'Upload failed';
+        console.error('❌ Upload failed:', errorMsg);
+        throw new Error(errorMsg);
       }
     } catch (error) {
-      console.error('Upload error:', error);
-      const errorMessage: Message = {
-        id: Date.now().toString(),
-        content: '❌ Upload failed. Please try again.',
-        role: 'assistant',
-        timestamp: new Date(),
-        responseType: 'upload_error'
-      };
+      console.error('❌ Upload error:', error);
+              const errorMessage: Message = {
+          id: Date.now().toString(),
+          content: `Upload failed: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`,
+          role: 'assistant',
+          timestamp: new Date(),
+          responseType: 'upload_error'
+        };
       setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
       setUploadProgress(0);
+      // Clear the file input
+      if (event.target) {
+        event.target.value = '';
+      }
     }
   };
 
@@ -293,50 +430,170 @@ export default function ChatInterface({ mcpClient }: ChatInterfaceProps) {
     });
   };
 
+  // Copy assistant message content to clipboard
+  const handleCopy = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (err) {
+      console.error('Copy failed:', err);
+    }
+  };
+
+  // Regenerate last answer by resubmitting the last user prompt
+  const handleRegenerate = () => {
+    const lastUser = [...messages].reverse().find(m => m.role === 'user');
+    if (!lastUser) return;
+    setInput(lastUser.content);
+    // Submit via the existing form handler
+    setTimeout(() => formRef.current?.requestSubmit(), 0);
+  };
+
+  const handleNewChat = async () => {
+    if (messages.length > 0) {
+      const choice = window.confirm(
+        'Start a new chat?\n\n' +
+        'Click OK to start a new chat (current messages will be saved to history).\n' +
+        'Click Cancel to keep the current chat.'
+      );
+      
+      if (!choice) {
+        return;
+      }
+    }
+    
+    // Create new chat through context
+    createNewChat();
+    setInput('');
+  };
+
+  const handleClearHistory = async () => {
+    if (!user || !token) {
+      alert('You must be logged in to clear chat history.');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      'Are you sure you want to clear ALL chat history?\n\n' +
+      'This will permanently delete all your saved messages and cannot be undone.'
+    );
+    
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/chat/messages', {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (response.ok) {
+        setMessages([]);
+        setInput('');
+        alert('Chat history cleared successfully!');
+      } else {
+        alert('Failed to clear chat history. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error clearing chat history:', error);
+      alert('Failed to clear chat history. Please try again.');
+    }
+  };
+
   return (
-    <div className="flex flex-col h-full">
-      {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+    <div className="flex h-full flex-col">
+      {/* Messages Area - Scrollable */}
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 space-y-4 min-h-0">
         {messages.length === 0 && (
-          <div className="text-center text-gray-500 dark:text-gray-400 py-8">
-            <div className="w-16 h-16 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-              </svg>
+          <div className="py-8">
+            <h3 className="text-lg font-semibold mb-2 text-center text-gray-800 dark:text-gray-100">Welcome</h3>
+            <p className="text-sm text-center text-gray-500 dark:text-gray-400 mb-6">Start with one of the prompts below</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {[
+                'Summarize the uploaded document',
+                'Extract key points from my file',
+                'Recommend resources related to my document',
+                'Explain this section in simple terms'
+              ].map((q) => (
+                <button
+                  key={q}
+                  onClick={() => {
+                    setInput(q);
+                    setTimeout(() => formRef.current?.requestSubmit(), 0);
+                  }}
+                  className="text-left rounded-xl border border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-900/50 p-4 transition-colors"
+                >
+                  <div className="text-sm text-gray-800 dark:text-gray-100">{q}</div>
+                </button>
+              ))}
             </div>
-            <h3 className="text-lg font-semibold mb-2">Welcome to Cubi AI</h3>
-            <p className="text-sm">Upload a document or start chatting to get started!</p>
           </div>
         )}
         
         {messages.map((message) => (
-          <div
-            key={message.id}
-            className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-          >
-            <div
-              className={`max-w-[80%] rounded-lg px-4 py-2 ${
+          <div key={message.id} className={`flex items-start gap-3 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            {message.role === 'assistant' && (
+              <div className="shrink-0 w-8 h-8 rounded-full bg-[#d9d9e3] dark:bg-[#565869] flex items-center justify-center text-[#202123] dark:text-[#ececf1]">
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6l4 2"/></svg>
+              </div>
+            )}
+
+            <div className={`max-w-[80%] rounded-2xl px-4 py-2 shadow-sm ${
                 message.role === 'user'
-                  ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white'
-                  : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
-              }`}
-            >
-              <div className="whitespace-pre-wrap">{message.content}</div>
-              <div className={`text-xs mt-1 ${
-                message.role === 'user' ? 'text-blue-100' : 'text-gray-500 dark:text-gray-400'
-              }`}>
+                ? 'bg-white border border-[#ececf1] text-[#202123] dark:bg-[#343541] dark:border-[#565869] dark:text-[#ececf1] rounded-br-sm'
+                : 'bg-[#f7f7f8] dark:bg-[#444654] text-[#202123] dark:text-[#ececf1] rounded-bl-sm'
+            }`}>
+              <div
+                className="whitespace-pre-wrap text-base leading-relaxed"
+                dangerouslySetInnerHTML={{
+                  __html: cleanResponse(message.content).replace(/\n/g, '<br>')
+                }}
+              />
+              <div className={`text-[10px] mt-1 text-[#6b7280] dark:text-[#8e8ea0]`}>
                 {formatTime(message.timestamp)}
               </div>
+              {message.role === 'assistant' && (
+                <div className="flex gap-2 mt-2">
+                  <button
+                    type="button"
+                    onClick={() => handleCopy(message.content)}
+                    className="text-[11px] px-2 py-1 rounded border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700/50"
+                    title="Copy"
+                  >
+                    Copy
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRegenerate}
+                    className="text-[11px] px-2 py-1 rounded border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700/50"
+                    title="Regenerate response"
+                  >
+                    Regenerate
+                  </button>
+                </div>
+              )}
             </div>
+
+            {message.role === 'user' && (
+              <div className="shrink-0 w-8 h-8 rounded-full bg-[#10a37f] flex items-center justify-center text-white">
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+              </div>
+            )}
           </div>
         ))}
         
         {isLoading && (
-          <div className="flex justify-start">
-            <div className="bg-gray-100 dark:bg-gray-700 rounded-lg px-4 py-2">
-              <div className="flex items-center space-x-2">
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                <span className="text-gray-600 dark:text-gray-300">Thinking...</span>
+          <div className="flex items-start gap-3 justify-start">
+            <div className="shrink-0 w-8 h-8 rounded-full bg-[#d9d9e3] dark:bg-[#565869] flex items-center justify-center text-[#202123] dark:text-[#ececf1]">
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6l4 2"/></svg>
+            </div>
+            <div className="bg-[#f7f7f8] dark:bg-[#444654] text-[#202123] dark:text-[#ececf1] rounded-2xl rounded-bl-sm px-4 py-2 shadow-sm">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
               </div>
             </div>
           </div>
@@ -345,56 +602,79 @@ export default function ChatInterface({ mcpClient }: ChatInterfaceProps) {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input Area */}
-      <div className="border-t border-gray-200 dark:border-gray-700 p-4">
-        <form onSubmit={handleSubmit} className="flex items-center space-x-2">
-          {/* File Upload Button */}
-          <label className="cursor-pointer p-2 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors duration-200">
-            <input
-              type="file"
-              accept=".txt,.docx,.pdf"
-              onChange={handleFileUpload}
-              className="hidden"
-            />
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-            </svg>
-          </label>
+      {/* Composer - Fixed at bottom */}
+      <div className="border-t border-[#ececf1] dark:border-[#2a2b32] bg-white dark:bg-[#343541] p-4 flex-shrink-0">
+        <form ref={formRef} onSubmit={handleSubmit} className="max-w-4xl mx-auto">
+          <div className="flex items-end gap-3">
+            {/* File Upload Button - Next to textbox */}
+            <div className="flex-shrink-0">
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileUpload}
+                accept=".txt,.pdf,.docx,.doc,.md,.html,.htm,.csv,.xlsx,.xls,.json,.xml"
+                className="hidden"
+                multiple
+              />
+              <Tooltip content="Upload files">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="p-3 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl border border-[#ececf1] dark:border-[#565869] transition-colors"
+                  disabled={isLoading}
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                  </svg>
+                </button>
+              </Tooltip>
+            </div>
 
-          {/* Text Input */}
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask a question or upload a document..."
-            className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:focus:ring-blue-400 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 transition-colors duration-200"
-            disabled={isLoading}
-          />
+            {/* Text Input */}
+            <div className="flex-1 relative">
+              <textarea
+                ref={textAreaRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Message Cubi AI..."
+                className="w-full resize-none rounded-xl border border-[#ececf1] dark:border-[#565869] bg-white dark:bg-[#40414f] text-[#202123] dark:text-[#ececf1] px-4 py-3 focus:outline-none focus:ring-2 focus:ring-[#10a37f] focus:border-transparent transition-all duration-200"
+                rows={1}
+                style={{ minHeight: '44px', maxHeight: '240px' }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    formRef.current?.requestSubmit();
+                  }
+                }}
+                disabled={isLoading}
+              />
 
-          {/* Send Button */}
-          <button
-            type="submit"
-            disabled={!input.trim() || isLoading}
-            className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-            </svg>
-          </button>
+              {/* Send Button */}
+              <button
+                type="submit"
+                disabled={!input.trim() || isLoading}
+                className="absolute right-2 bottom-2 p-2 text-[#10a37f] hover:text-[#0d8a6f] disabled:text-gray-400 disabled:cursor-not-allowed transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                </svg>
+              </button>
+            </div>
+          </div>
         </form>
 
         {/* Upload Progress */}
         {uploadProgress > 0 && uploadProgress < 100 && (
-          <div className="mt-2">
-            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+          <div className="mt-3 max-w-4xl mx-auto">
+            <div className="bg-gray-200 dark:bg-gray-700 rounded-full h-2">
               <div
-                className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                className="bg-[#10a37f] h-2 rounded-full transition-all duration-300"
                 style={{ width: `${uploadProgress}%` }}
               ></div>
             </div>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 text-center">
               Uploading... {uploadProgress}%
-            </p>
+            </div>
           </div>
         )}
       </div>
