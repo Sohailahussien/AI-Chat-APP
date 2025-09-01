@@ -9,7 +9,7 @@ interface Message {
   id: string;
   content: string;
   role: 'user' | 'assistant';
-  timestamp: Date;
+  timestamp: Date | string;
   documents?: any[];
   metadatas?: any[];
   responseType?: string;
@@ -422,8 +422,16 @@ export default function ChatInterface({ mcpClient }: ChatInterfaceProps) {
     }
   };
 
-  const formatTime = (date: Date) => {
-    return date.toLocaleTimeString('en-US', { 
+  const formatTime = (date: Date | string) => {
+    // Convert string to Date if needed
+    const dateObj = typeof date === 'string' ? new Date(date) : date;
+    
+    // Check if the date is valid
+    if (isNaN(dateObj.getTime())) {
+      return 'Invalid time';
+    }
+    
+    return dateObj.toLocaleTimeString('en-US', { 
       hour: 'numeric', 
       minute: '2-digit',
       hour12: true 
