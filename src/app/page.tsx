@@ -2,19 +2,19 @@
 
 import { useState, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useTheme } from '@/contexts/ThemeContext';
+
 import { useChat } from '@/contexts/ChatContext';
 import { useRouter } from 'next/navigation';
 import ChatInterface from '../components/ChatInterface';
 import ProtectedRoute from '../components/ProtectedRoute';
-import ThemeToggle from '../components/ThemeToggle';
+
 import Tooltip from '../components/Tooltip';
 import CubiLogo from '../components/CubiLogo';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 
 export default function Home() {
   const { user } = useAuth();
-  const { theme, toggleTheme } = useTheme();
+
   const { chats, currentChat, createNewChat, loadChat, deleteChat, clearAllChats, isLoading } = useChat();
   const router = useRouter();
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -40,7 +40,6 @@ export default function Home() {
 
   // Keyboard shortcuts
   useKeyboardShortcuts({
-    onToggleTheme: toggleTheme,
     onToggleSidebar: toggleSidebar
   });
 
@@ -302,7 +301,6 @@ export default function Home() {
                 <div className="text-sm sm:text-base font-semibold text-gray-900 dark:text-gray-100 mt-1 mb-0 px-2 py-2">Cubi AI</div>
               </div>
               <div className="flex items-center gap-2">
-                <ThemeToggle />
             </div>
           </div>
         </header>
