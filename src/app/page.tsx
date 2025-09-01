@@ -303,9 +303,6 @@ export default function Home() {
               </div>
               <div className="flex items-center gap-2">
                 <div className="text-xs sm:text-[11px] px-2 py-1 rounded-md border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300">Model: default</div>
-                <div className="text-sm text-gray-600 dark:text-gray-300 hidden sm:block">
-                  Welcome, <span className="font-semibold text-gray-900 dark:text-gray-100">{user.name || user.email}</span>
-                </div>
                 <ThemeToggle />
             </div>
           </div>
