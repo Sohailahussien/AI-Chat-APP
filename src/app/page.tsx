@@ -302,7 +302,6 @@ export default function Home() {
                 <div className="text-sm sm:text-base font-semibold text-gray-900 dark:text-gray-100 mt-1 mb-0 px-2 py-2">Cubi AI</div>
               </div>
               <div className="flex items-center gap-2">
-                <div className="text-xs sm:text-[11px] px-2 py-1 rounded-md border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300">Model: default</div>
                 <ThemeToggle />
             </div>
           </div>
