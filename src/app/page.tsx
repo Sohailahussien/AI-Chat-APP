@@ -4,6 +4,7 @@ import { useState, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useChat } from '@/contexts/ChatContext';
+import { useRouter } from 'next/navigation';
 import ChatInterface from '../components/ChatInterface';
 import ProtectedRoute from '../components/ProtectedRoute';
 import ThemeToggle from '../components/ThemeToggle';
@@ -15,6 +16,7 @@ export default function Home() {
   const { user } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const { chats, currentChat, createNewChat, loadChat, deleteChat, clearAllChats, isLoading } = useChat();
+  const router = useRouter();
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -30,6 +32,10 @@ export default function Home() {
 
   const toggleSidebar = () => {
     setSidebarOpen(!sidebarOpen);
+  };
+
+  const handleAccountClick = () => {
+    router.push('/account');
   };
 
   // Keyboard shortcuts
@@ -199,8 +205,8 @@ export default function Home() {
               
               {/* Bottom section - Account */}
               <div className="p-2">
-                <a
-                  href="/account"
+                <button
+                  onClick={handleAccountClick}
                   className="w-full flex items-center gap-3 px-3 py-2.5 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors duration-200"
                 >
                   <div className="flex items-center justify-center w-6 h-6">
@@ -211,7 +217,7 @@ export default function Home() {
                     </div>
                   </div>
                   <span className="text-sm">Account</span>
-                </a>
+                </button>
               </div>
             </>
           ) : (
@@ -271,8 +277,8 @@ export default function Home() {
               
               {/* Account Button */}
               <div className="p-2">
-                <a
-                  href="/account"
+                <button
+                  onClick={handleAccountClick}
                   className="w-full flex items-center justify-center p-2 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors duration-200"
                   title="Account"
                 >
@@ -281,7 +287,7 @@ export default function Home() {
                       {user.name ? user.name.charAt(0).toUpperCase() : user.email.charAt(0).toUpperCase()}
                     </span>
                   </div>
-                </a>
+                </button>
               </div>
             </>
           )}
