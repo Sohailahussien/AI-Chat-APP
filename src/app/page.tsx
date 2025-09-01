@@ -313,12 +313,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Keyboard Shortcuts Help */}
-        <div className="fixed bottom-4 right-4 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-3 text-xs text-gray-600 dark:text-gray-400">
-          <div className="space-y-1">
-            <div>⌘+T: Toggle theme</div>
-          </div>
-        </div>
+
       </div>
     </ProtectedRoute>
   );
