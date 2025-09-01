@@ -9,7 +9,6 @@ export default function ThemeToggle() {
     <button
       onClick={toggleTheme}
       className="relative p-2 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-all duration-200"
-      title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
     >
       <div className="relative w-5 h-5">
         {/* Sun Icon */}
