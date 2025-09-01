@@ -2,19 +2,19 @@
 
 import { useState, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-
+import { useTheme } from '@/contexts/ThemeContext';
 import { useChat } from '@/contexts/ChatContext';
 import { useRouter } from 'next/navigation';
 import ChatInterface from '../components/ChatInterface';
 import ProtectedRoute from '../components/ProtectedRoute';
-
+import ThemeToggle from '../components/ThemeToggle';
 import Tooltip from '../components/Tooltip';
 import CubiLogo from '../components/CubiLogo';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 
 export default function Home() {
   const { user } = useAuth();
-
+  const { theme, toggleTheme } = useTheme();
   const { chats, currentChat, createNewChat, loadChat, deleteChat, clearAllChats, isLoading } = useChat();
   const router = useRouter();
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -40,6 +40,7 @@ export default function Home() {
 
   // Keyboard shortcuts
   useKeyboardShortcuts({
+    onToggleTheme: toggleTheme,
     onToggleSidebar: toggleSidebar
   });
 
@@ -192,7 +193,7 @@ export default function Home() {
                     <div className="flex items-center justify-center w-6 h-6">
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
+                    </svg>
                     </div>
                     <span className="text-sm">Clear All Chats</span>
                   </button>
@@ -245,7 +246,7 @@ export default function Home() {
                   </svg>
                 </button>
               </div>
-
+              
               {/* Search Button */}
               <div className="px-2">
                 <button
@@ -283,9 +284,9 @@ export default function Home() {
                 >
                   <div className="w-6 h-6 bg-gray-600 dark:bg-gray-500 rounded-full flex items-center justify-center">
                     <span className="text-xs font-medium text-white">
-                      {user.name ? user.name.charAt(0).toUpperCase() : user.email.charAt(0).toUpperCase()}
-                    </span>
-                  </div>
+                    {user.name ? user.name.charAt(0).toUpperCase() : user.email.charAt(0).toUpperCase()}
+                  </span>
+                </div>
                 </button>
               </div>
             </>
@@ -301,6 +302,7 @@ export default function Home() {
                 <div className="text-sm sm:text-base font-semibold text-gray-900 dark:text-gray-100 mt-1 mb-0 px-2 py-2">Cubi AI</div>
               </div>
               <div className="flex items-center gap-2">
+                <ThemeToggle />
             </div>
           </div>
         </header>
