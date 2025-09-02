@@ -1,24 +1,66 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
+import { verifyJWT } from '@/lib/auth';
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
+    console.log('📤 Upload request received');
+    
+    // Get user token from headers
+    const token = request.headers.get('authorization')?.replace('Bearer ', '');
+    let userId = null;
+
+    if (token) {
+      const decoded = verifyJWT(token);
+      if (decoded) {
+        userId = decoded.userId;
+        console.log('👤 User authenticated:', userId);
+      }
+    }
+
     const formData = await request.formData();
     const file = formData.get('file') as File;
     
     if (!file) {
+      console.log('❌ No file provided');
       return NextResponse.json(
         { error: 'No file provided' },
         { status: 400 }
       );
     }
 
-    // Validate file type
-    const allowedTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'text/markdown'];
-    if (!allowedTypes.includes(file.type)) {
+    console.log('📄 File received:', file.name, 'Size:', file.size, 'Type:', file.type);
+
+    // Validate file type - expanded to support all common document formats
+    const allowedTypes = [
+      // Text files
+      'text/plain', 'text/markdown', 'text/rtf',
+      // Microsoft Office
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-excel',
+      'application/msword',
+      // PDF
+      'application/pdf',
+      // HTML
+      'text/html', 'application/xhtml+xml',
+      // CSV
+      'text/csv', 'application/csv',
+      // JSON
+      'application/json',
+      // XML
+      'application/xml', 'text/xml'
+    ];
+    
+    // Also check file extension as fallback
+    const fileExt = file.name.toLowerCase().split('.').pop();
+    const allowedExtensions = ['txt', 'md', 'rtf', 'docx', 'doc', 'pdf', 'html', 'htm', 'csv', 'xlsx', 'xls', 'json', 'xml'];
+    
+    if (!allowedTypes.includes(file.type) && !allowedExtensions.includes(fileExt || '')) {
+      console.log('❌ Invalid file type:', file.type, 'or extension:', fileExt);
       return NextResponse.json(
-        { error: 'Invalid file type. Please upload PDF, DOCX, TXT, or MD files.' },
+        { error: 'Invalid file type. Supported formats: TXT, MD, DOCX, PDF, HTML, CSV, XLSX, JSON, XML' },
         { status: 400 }
       );
     }
@@ -38,39 +80,65 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const filePath = path.join(uploadsDir, fileName);
     
     await writeFile(filePath, buffer);
+    console.log('💾 File saved to:', filePath);
 
-    // Ingest via Python RAG service (Pinecone-backed)
-    let ingested = false;
+    // Process via Enhanced MCP Document Tools
+    let processed = false;
+    let processingError = null;
+    
     try {
-      const form = new FormData();
-      // Use absolute path for the RAG service
-      const absolutePath = path.resolve(filePath);
-      form.append('file_path', absolutePath);
-      form.append('source', file.name);
-      const ingestRes = await fetch(`${process.env.PY_RAG_BASE_URL}/ingest`, {
+      console.log('🔄 Processing file with MCP Enhanced Document Tools...');
+      
+      const mcpResponse = await fetch(`${request.nextUrl.origin}/api/mcp/tools`, {
         method: 'POST',
-        body: form,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tool: 'processDocument',
+          serverType: 'enhanced',
+          params: {
+            file: {
+              name: file.name,
+              buffer: { data: Array.from(buffer) }
+            },
+            userId: userId || 'default'
+          }
+        }),
       });
-      ingested = ingestRes.ok;
-      if (!ingested) {
-        const errText = await ingestRes.text();
-        console.error('RAG ingest failed:', ingestRes.status, errText);
+
+      if (mcpResponse.ok) {
+        const result = await mcpResponse.json();
+        processed = result.success;
+        console.log('✅ MCP processing result:', result);
+        
+        if (!processed) {
+          processingError = result.error;
+          console.error('❌ MCP processing failed:', result.error);
+          }
+        } else {
+        const errorText = await mcpResponse.text();
+        processingError = `MCP request failed: ${mcpResponse.status} - ${errorText}`;
+        console.error('❌ MCP request failed:', mcpResponse.status, errorText);
       }
     } catch (e) {
-      console.error('RAG ingest error:', e);
+      processingError = `MCP processing error: ${e}`;
+      console.error('❌ MCP processing error:', e);
     }
 
-    return NextResponse.json({
+    const response = {
       success: true,
-      message: `File "${file.name}" uploaded${ingested ? ' and ingested' : ''} successfully`,
+      message: `File "${file.name}" uploaded${processed ? ' and processed' : ''} successfully`,
       fileName: file.name,
-      ingested,
-    });
+      processed,
+      error: processingError
+    };
+
+    console.log('📤 Upload response:', response);
+    return NextResponse.json(response);
 
   } catch (error) {
-    console.error('Upload error:', error);
+    console.error('❌ Upload error:', error);
     return NextResponse.json(
-      { error: 'Upload failed' },
+      { error: 'Upload failed', details: error instanceof Error ? error.message : String(error) },
       { status: 500 }
     );
   }

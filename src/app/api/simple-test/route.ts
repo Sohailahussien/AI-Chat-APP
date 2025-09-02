@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { spawn } from 'child_process';
 
 export async function GET() {
-  return new Promise((resolve) => {
+  return new Promise<Response>((resolve) => {
     try {
       console.log('Testing simple Python execution...');
       

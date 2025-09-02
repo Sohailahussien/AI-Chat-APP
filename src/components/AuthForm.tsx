@@ -39,13 +39,22 @@ export default function AuthForm({ mode, onModeChange }: AuthFormProps) {
       const data = await response.json();
 
       if (response.ok) {
-        // Store token and redirect
-        localStorage.setItem('authToken', data.token);
-        localStorage.setItem('authUser', JSON.stringify(data.user));
-        console.log('Auth successful, stored user:', data.user);
-        window.location.href = '/';
+        if (mode === 'register' && data.requiresVerification) {
+          // Registration successful, show verification message
+          setError(`Registration successful! Please check your email (${formData.email}) to verify your account before logging in.`);
+        } else {
+          // Login successful or registration with immediate login
+          localStorage.setItem('authToken', data.token);
+          localStorage.setItem('authUser', JSON.stringify(data.user));
+          console.log('Auth successful, stored user:', data.user);
+          window.location.href = '/';
+        }
       } else {
-        setError(data.error || 'An error occurred');
+        if (data.requiresVerification) {
+          setError(`${data.error} Please check your email (${data.email}) for a verification link.`);
+        } else {
+          setError(data.error || 'An error occurred');
+        }
       }
     } catch (error) {
       setError('Network error. Please try again.');
@@ -62,25 +71,12 @@ export default function AuthForm({ mode, onModeChange }: AuthFormProps) {
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="text-center">
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-          {mode === 'login' ? 'Welcome Back' : 'Create Account'}
-        </h2>
-        <p className="text-gray-600 dark:text-gray-400 mt-2">
-          {mode === 'login' 
-            ? 'Sign in to your account to continue' 
-            : 'Join Cubi AI to get started'
-          }
-        </p>
-      </div>
-
+    <div className="space-y-4">
       {/* Form */}
       <form onSubmit={handleSubmit} className="space-y-4">
         {mode === 'register' && (
           <div>
-            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Full Name
             </label>
             <input
@@ -89,14 +85,14 @@ export default function AuthForm({ mode, onModeChange }: AuthFormProps) {
               value={formData.name}
               onChange={handleInputChange}
               required={mode === 'register'}
-              className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:focus:ring-blue-400 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 transition-colors duration-200"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-1 focus:ring-gray-900 focus:border-gray-900 dark:focus:ring-gray-100 dark:focus:border-gray-100 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 transition-colors duration-200"
               placeholder="Enter your full name"
             />
           </div>
         )}
 
         <div>
-          <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Email Address
           </label>
           <input
@@ -105,13 +101,13 @@ export default function AuthForm({ mode, onModeChange }: AuthFormProps) {
             value={formData.email}
             onChange={handleInputChange}
             required
-            className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:focus:ring-blue-400 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 transition-colors duration-200"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-1 focus:ring-gray-900 focus:border-gray-900 dark:focus:ring-gray-100 dark:focus:border-gray-100 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 transition-colors duration-200"
             placeholder="Enter your email"
           />
         </div>
 
         <div>
-          <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Password
           </label>
           <input
@@ -120,14 +116,14 @@ export default function AuthForm({ mode, onModeChange }: AuthFormProps) {
             value={formData.password}
             onChange={handleInputChange}
             required
-            className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:focus:ring-blue-400 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 transition-colors duration-200"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-1 focus:ring-gray-900 focus:border-gray-900 dark:focus:ring-gray-100 dark:focus:border-gray-100 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 transition-colors duration-200"
             placeholder="Enter your password"
           />
         </div>
 
         {mode === 'register' && (
           <div>
-            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               Confirm Password
             </label>
             <input
@@ -136,14 +132,14 @@ export default function AuthForm({ mode, onModeChange }: AuthFormProps) {
               value={formData.confirmPassword}
               onChange={handleInputChange}
               required={mode === 'register'}
-              className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:focus:ring-blue-400 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 transition-colors duration-200"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-1 focus:ring-gray-900 focus:border-gray-900 dark:focus:ring-gray-100 dark:focus:border-gray-100 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 transition-colors duration-200"
               placeholder="Confirm your password"
             />
           </div>
         )}
 
         {error && (
-          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3">
+          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-3">
             <p className="text-red-600 dark:text-red-400 text-sm">{error}</p>
           </div>
         )}
@@ -151,11 +147,11 @@ export default function AuthForm({ mode, onModeChange }: AuthFormProps) {
         <button
           type="submit"
           disabled={loading}
-          className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-3 px-4 rounded-lg font-semibold hover:from-blue-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105"
+          className="w-full bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 py-2 px-4 rounded-md font-medium hover:bg-gray-800 dark:hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
         >
           {loading ? (
             <div className="flex items-center justify-center">
-              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current mr-2"></div>
               {mode === 'login' ? 'Signing In...' : 'Creating Account...'}
             </div>
           ) : (
@@ -165,12 +161,12 @@ export default function AuthForm({ mode, onModeChange }: AuthFormProps) {
       </form>
 
       {/* Mode Toggle */}
-      <div className="text-center">
-        <p className="text-gray-600 dark:text-gray-400">
+      <div className="text-center pt-4 border-t border-gray-200 dark:border-gray-700">
+        <p className="text-sm text-gray-600 dark:text-gray-400">
           {mode === 'login' ? "Don't have an account?" : "Already have an account?"}
           <button
             onClick={() => onModeChange?.(mode === 'login' ? 'register' : 'login')}
-            className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-semibold ml-1 transition-colors duration-200"
+            className="text-gray-900 dark:text-gray-100 hover:text-gray-700 dark:hover:text-gray-300 font-medium ml-1 transition-colors duration-200"
           >
             {mode === 'login' ? 'Sign up' : 'Sign in'}
           </button>

@@ -14,7 +14,7 @@ interface Message {
 }
 
 export default function AccountPage() {
-  const { user, logout } = useAuth();
+  const { user, token, logout } = useAuth();
   const router = useRouter();
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
@@ -30,12 +30,12 @@ export default function AccountPage() {
   }, [user, router]);
 
   const loadChatHistory = async () => {
-    if (!user?.token) return;
+    if (!token) return;
 
     try {
       const response = await fetch('/api/chat/messages', {
         headers: {
-          'Authorization': `Bearer ${user.token}`
+          'Authorization': `Bearer ${token}`
         }
       });
 
@@ -52,7 +52,7 @@ export default function AccountPage() {
   };
 
   const clearChatHistory = async () => {
-    if (!user?.token) return;
+    if (!token) return;
 
     if (!confirm('Are you sure you want to clear all chat history? This cannot be undone.')) {
       return;
@@ -62,7 +62,7 @@ export default function AccountPage() {
       const response = await fetch('/api/chat/messages', {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${user.token}`
+          'Authorization': `Bearer ${token}`
         }
       });
 

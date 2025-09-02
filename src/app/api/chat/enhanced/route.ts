@@ -1,10 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { spawn } from 'child_process';
-import path from 'path';
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 
-// Ensure this route runs in the Node.js runtime (not Edge)
+// Try to import EnhancedDocumentTools
+let EnhancedDocumentTools: any = null;
+try {
+  const module = require('@/mcp/tools/enhancedDocumentTools');
+  EnhancedDocumentTools = module.EnhancedDocumentTools || module.default;
+  console.log('✅ EnhancedDocumentTools imported successfully');
+} catch (error) {
+  console.error('❌ Failed to import EnhancedDocumentTools:', error);
+}
+
+// Ensure this route runs in Node.js
 export const runtime = 'nodejs';
 
 const anthropic = new Anthropic({
@@ -17,82 +25,74 @@ const openai = new OpenAI({
 
 export async function POST(request: NextRequest) {
   try {
-    const { message, streaming = false, useExternalAI = true, skipLocalContext = false } = await request.json();
+    const {
+      message,
+      streaming = false,
+      useExternalAI = true,
+      skipLocalContext: initialSkipLocalContext = false,
+      userId = 'default'
+    } = await request.json();
 
-    // Step 1: Optionally get relevant documents from local storage
     let localContext = '';
-    if (!skipLocalContext) {
+
+    // Step 1: Fetch relevant documents unless explicitly skipped
+    if (!initialSkipLocalContext && EnhancedDocumentTools) {
       try {
-        const pythonProcess = spawn('python', [
-          path.join(process.cwd(), 'src', 'services', 'ragPipelineService.py'),
-          '--query',
-          message
-        ]);
-
-        const localResult = await new Promise((resolve, reject) => {
-          let stdout = '';
-          let stderr = '';
-
-          pythonProcess.stdout.on('data', (data) => {
-            stdout += data.toString();
-          });
-
-          pythonProcess.stderr.on('data', (data) => {
-            stderr += data.toString();
-          });
-
-          pythonProcess.on('close', (code) => {
-            if (code === 0 && stdout.trim()) {
-              try {
-                const result = JSON.parse(stdout);
-                resolve(result);
-              } catch (error) {
-                resolve({ documents: [], metadatas: [] });
-              }
-            } else {
-              resolve({ documents: [], metadatas: [] });
-            }
-          });
+        const docs = await new EnhancedDocumentTools().queryDocuments({
+          query: message,
+          userId
         });
 
-        if ((localResult as any).documents && (localResult as any).documents.length > 0) {
-          localContext = `\n\nRelevant information from your documents:\n${(localResult as any).documents.join('\n\n')}`;
+        if (docs.documents.length > 0) {
+          localContext = docs.documents.join("\n\n");
+          console.log("📄 Injecting document context:", docs.documents.length, "chunks");
+        } else {
+          console.log("ℹ️ No relevant document context found, falling back to general AI.");
         }
       } catch (error) {
-        console.log('Local document search failed, continuing with external AI only');
+        console.error("❌ Error fetching document context:", error);
       }
+    } else if (initialSkipLocalContext) {
+      console.log("🔍 Explicitly skipping local context.");
     }
 
     const provider = (process.env.AI_PROVIDER || 'anthropic').toLowerCase();
 
-    // Step 2: If streaming is requested, create streaming response
+    // Step 2: Greeting handler
+    const q = (message || '').toLowerCase();
+    const isGreeting = /^(hi|hello|hey|good\s(morning|afternoon|evening))\b/.test(q);
+    if (isGreeting) {
+      return NextResponse.json({
+        response: 'Hello! How can I help you today?',
+        responseType: 'conversational',
+        hasLocalContext: !!localContext
+      });
+    }
+
+    // Step 3: System prompt (static)
+    const systemPrompt = `
+You are a helpful AI assistant.
+Instructions:
+1. If document context is provided, ALWAYS use it to answer the user's question.
+2. If no context is provided, answer from general knowledge.
+3. Never say "I don't have access to the file". Instead, summarize from context or say you don't know.
+4. Plain text only — no markdown.
+    `;
+
+    // Step 4: Build user prompt with inline context
+    const userPrompt = localContext && localContext.trim().length > 0
+      ? `User question: ${message}\n\nHere is the relevant document context:\n${localContext}`
+      : message;
+
+    // Step 5: Streaming response
     if (streaming && useExternalAI) {
       const encoder = new TextEncoder();
-      
+
       const stream = new ReadableStream({
         async start(controller) {
           try {
-            // Simple system prompt without templates
-            const systemPrompt = `You are a helpful AI assistant with access to both general knowledge and specific information from the user's uploaded documents. 
-
-When answering questions:
-1. Use the provided document context when relevant
-2. Supplement with your general knowledge when needed
-3. Be conversational and helpful
-4. If the question is outside the scope of the documents, provide a helpful general response
-
-${localContext ? 'Document Context Available: Yes' : 'Document Context Available: No'}`;
-
-            const userPrompt = localContext 
-              ? `${message}\n\n${localContext}`
-              : message;
-
             if (provider === 'openai') {
-              // OpenAI streaming
-              if (!process.env.OPENAI_API_KEY) {
-                throw new Error('OPENAI_API_KEY is not set');
-              }
-              const stream = await openai.chat.completions.create({
+              const aiStream = await openai.chat.completions.create({
                 model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
                 messages: [
                   { role: 'system', content: systemPrompt },
@@ -102,30 +102,27 @@ ${localContext ? 'Document Context Available: Yes' : 'Document Context Available
                 max_tokens: 1000
               });
 
-              for await (const chunk of stream) {
+              for await (const chunk of aiStream) {
                 const delta = chunk.choices?.[0]?.delta?.content || '';
                 if (delta) controller.enqueue(encoder.encode(delta));
               }
             } else {
-              // Anthropic streaming
-              const _stream = await anthropic.messages.create({
+              const aiStream = await anthropic.messages.create({
                 model: process.env.ANTHROPIC_MODEL || 'claude-3-haiku-20240307',
                 max_tokens: 1000,
                 messages: [
-                  { role: 'system', content: systemPrompt },
-                  { role: 'user', content: userPrompt }
+                  { role: 'user', content: `${systemPrompt}\n\n${userPrompt}` }
                 ],
                 stream: true,
               });
 
-              for await (const chunk of _stream) {
-                if ((chunk as any).type === 'content_block_delta' && (chunk as any).delta?.type === 'text_delta') {
-                  const text = (chunk as any).delta.text;
-                  controller.enqueue(encoder.encode(text));
+              for await (const chunk of aiStream) {
+                if ((chunk as any).type === 'content_block_delta' &&
+                    (chunk as any).delta?.type === 'text_delta') {
+                  controller.enqueue(encoder.encode((chunk as any).delta.text));
                 }
               }
             }
-
             controller.close();
           } catch (error) {
             console.error('Streaming error:', error);
@@ -143,28 +140,10 @@ ${localContext ? 'Document Context Available: Yes' : 'Document Context Available
       });
     }
 
-    // Step 3: Non-streaming response
+    // Step 6: Non-streaming request
     if (useExternalAI) {
       try {
-        // Simple system prompt without templates
-        const systemPrompt = `You are a helpful AI assistant with access to both general knowledge and specific information from the user's uploaded documents. 
-
-When answering questions:
-1. Use the provided document context when relevant
-2. Supplement with your general knowledge when needed
-3. Be conversational and helpful
-4. If the question is outside the scope of the documents, provide a helpful general response
-
-${localContext ? 'Document Context Available: Yes' : 'Document Context Available: No'}`;
-
-        const userPrompt = localContext 
-          ? `${message}\n\n${localContext}`
-          : message;
-
         if (provider === 'openai') {
-          if (!process.env.OPENAI_API_KEY) {
-            throw new Error('OPENAI_API_KEY is not set');
-          }
           const response = await openai.chat.completions.create({
             model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
             messages: [
@@ -173,7 +152,7 @@ ${localContext ? 'Document Context Available: Yes' : 'Document Context Available
             ],
             max_tokens: 1000
           });
-          
+
           const text = response.choices?.[0]?.message?.content || '';
           return NextResponse.json({
             response: text,
@@ -186,8 +165,7 @@ ${localContext ? 'Document Context Available: Yes' : 'Document Context Available
             model: process.env.ANTHROPIC_MODEL || 'claude-3-haiku-20240307',
             max_tokens: 1000,
             messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: userPrompt }
+              { role: 'user', content: `${systemPrompt}\n\n${userPrompt}` }
             ],
           });
 
@@ -199,80 +177,33 @@ ${localContext ? 'Document Context Available: Yes' : 'Document Context Available
           });
         }
       } catch (error: any) {
-        // Improve error visibility in dev logs
         console.error('External AI error:', error?.message || error);
-        if (error?.response) {
-          try {
-            const body = await error.response.json();
-            console.error('External AI error body:', body);
-          } catch {}
-        }
-        // Smart local fallback without external AI
-        const q = (message || '').toLowerCase();
-        const isGreeting = /^(hi|hello|hey|good\s(morning|afternoon|evening))\b/.test(q);
-        const wantsMore = /(elaborate|more details|tell me more|expand|summary|summarize)/.test(q);
 
-        if (isGreeting) {
-          return NextResponse.json({
-            response: 'Hello! How can I help you today? You can ask about your uploaded documents or general topics.',
-            responseType: 'conversational',
-            hasLocalContext: !!localContext
-          });
-        }
-
+        // Fallback: return summary of local context if available
         if (localContext) {
-          // Create a simple summary-style response from local docs
           const plain = localContext.replace(/\n+/g, '\n').slice(0, 2000);
-          const summary = wantsMore
-            ? `Here is a more detailed summary based on your document:\n\n- ${plain.split('\n').filter(Boolean).slice(0, 8).join('\n- ')}`
-            : `Based on your documents: ${plain.substring(0, 600)}...`;
-
           return NextResponse.json({
-            response: summary,
-            responseType: wantsMore ? 'document_summary' : 'document_only',
+            response: `Based on your documents:\n\n${plain.substring(0, 600)}...`,
+            responseType: 'document_only',
             hasLocalContext: true
           });
         }
 
-        // No local context and external AI failed → gentle fallback
         return NextResponse.json({
-          response: "I couldn't access external knowledge just now. You can upload a file or try again in a moment.",
+          response: "I couldn't process your request right now. Please try again later.",
           responseType: 'error',
           hasLocalContext: false
         });
       }
     }
 
-    // Step 4: Fallback to local documents only (no external AI requested)
-    const q = (message || '').toLowerCase();
-    const isGreeting = /^(hi|hello|hey|good\s(morning|afternoon|evening))\b/.test(q);
-    const wantsMore = /(elaborate|more details|tell me more|expand|summary|summarize)/.test(q);
-
-    if (isGreeting) {
-      return NextResponse.json({
-        response: 'Hello! How can I help you today? You can ask about your uploaded documents or general topics.',
-        responseType: 'conversational',
-        hasLocalContext: !!localContext
-      });
-    }
-
-    if (localContext) {
-      const plain = localContext.replace(/\n+/g, '\n').slice(0, 2000);
-      const summary = wantsMore
-        ? `Here is a more detailed summary based on your document:\n\n- ${plain.split('\n').filter(Boolean).slice(0, 8).join('\n- ')}`
-        : `Based on your documents: ${plain.substring(0, 600)}...`;
-
-      return NextResponse.json({
-        response: summary,
-        responseType: wantsMore ? 'document_summary' : 'document_only',
-        hasLocalContext: true
-      });
-    }
-
+    // Step 7: Final fallback (no external AI used)
     return NextResponse.json({
-      response: "I don't have any relevant information to answer your question. Please try asking something else or upload more documents.",
-      responseType: 'document_only',
-      hasLocalContext: false
+      response: localContext
+        ? `Based on your documents:\n\n${localContext.substring(0, 600)}...`
+        : "I don't have any relevant information right now.",
+      responseType: localContext ? 'document_only' : 'error',
+      hasLocalContext: !!localContext
     });
 
   } catch (error) {

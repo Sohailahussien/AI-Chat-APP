@@ -296,7 +296,7 @@ Provide practical, actionable advice for project management challenges.`,
     // Check if query matches example user input or assistant response
     return lowerQuery.includes(lowerUser.substring(0, 20)) || 
            lowerUser.includes(lowerQuery.substring(0, 20)) ||
-           example.tags?.some(tag => lowerQuery.includes(tag.toLowerCase()));
+           (example.tags?.some(tag => lowerQuery.includes(tag.toLowerCase())) || false);
   }
 
   // Training methods

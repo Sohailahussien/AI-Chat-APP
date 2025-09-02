@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import CubiLogo from '@/components/CubiLogo'; // Added import for CubiLogo
 
 interface UserProfileProps {
   onClose?: () => void;
@@ -79,10 +80,8 @@ export default function UserProfile({ onClose }: UserProfileProps) {
       <div className="p-6 space-y-6">
         {/* Avatar and Basic Info */}
         <div className="text-center">
-          <div className="w-20 h-20 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full flex items-center justify-center mx-auto mb-4">
-            <span className="text-white text-2xl font-bold">
-              {user.name ? user.name.charAt(0).toUpperCase() : user.email.charAt(0).toUpperCase()}
-            </span>
+          <div className="w-20 h-20 flex items-center justify-center mx-auto mb-4">
+            <CubiLogo size="lg" showText={false} />
           </div>
           <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{user.name || 'User'}</h3>
           <p className="text-sm text-gray-500 dark:text-gray-400">{user.email}</p>

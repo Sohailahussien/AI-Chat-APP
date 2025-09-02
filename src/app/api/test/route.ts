@@ -3,7 +3,7 @@ import { spawn } from 'child_process';
 import path from 'path';
 
 export async function GET() {
-  return new Promise((resolve) => {
+  return new Promise<Response>((resolve) => {
     try {
       const scriptPath = path.join(process.cwd(), 'src', 'services', 'ragPipelineService.py');
       const pythonPath = path.join(process.cwd(), 'venv', 'Scripts', 'python.exe');

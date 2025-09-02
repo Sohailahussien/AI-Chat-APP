@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createUser, generateJWT } from '@/lib/auth';
+import { createUnverifiedUser } from '@/lib/auth';
+import { sendEmail, generateEmailVerificationHTML } from '@/lib/email';
 
 export async function POST(request: NextRequest) {
   try {
@@ -20,30 +21,40 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create user
-    const user = await createUser(email, password, name);
+    // Create unverified user
+    const result = await createUnverifiedUser(email, password, name);
 
-    if (!user) {
+    if (!result) {
       return NextResponse.json(
         { error: 'User already exists or creation failed' },
         { status: 400 }
       );
     }
 
-    // Generate JWT token
-    const token = generateJWT({
-      userId: user.id,
-      email: user.email
+    const { user, verificationToken } = result;
+
+    // Send verification email
+    const verificationUrl = `${request.nextUrl.origin}/verify-email?token=${verificationToken}`;
+    const emailSent = await sendEmail({
+      to: email,
+      subject: 'Verify Your Email - Cubi AI',
+      html: generateEmailVerificationHTML(name || 'User', verificationUrl)
     });
+
+    if (!emailSent) {
+      console.error('Failed to send verification email to:', email);
+      // Don't fail registration if email fails, but log it
+    }
 
     return NextResponse.json({
       success: true,
-      message: 'User registered successfully',
-      token,
+      message: 'Registration successful! Please check your email to verify your account.',
+      requiresVerification: true,
       user: {
         id: user.id,
         email: user.email,
-        name: user.name
+        name: user.name,
+        emailVerified: user.emailVerified
       }
     });
 
